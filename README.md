@@ -6,8 +6,6 @@
 Deploy static frontends to IPFS and resolve them via a Solana Name Service
 (`.sol`) domain — `init` and `deploy`, nothing else, on purpose.
 
-> Replace `YOUR_USERNAME` in the badge URLs and in `package.json`'s
-> `repository` field once this is pushed to your actual GitHub repo.
 
 ## Project structure
 
