@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    # Note: this project depends on young, fast-moving SDKs
+    # (@storacha/client, @bonfida/spl-name-service) that have renamed
+    # packages/CLIs before — review these PRs carefully rather than
+    # auto-merging, since a version bump could change an exported
+    # function name (see lib/sns.js and lib/storacha.js comments).
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
