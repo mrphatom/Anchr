@@ -1,0 +1,34 @@
+{
+  "name": "anchr-cli",
+  "version": "0.1.0",
+  "description": "Anchr — deploy static frontends to IPFS and resolve via Solana Name Service (.sol) domains",
+  "type": "module",
+  "bin": {
+    "anchr": "./bin/anchr.js"
+  },
+  "scripts": {
+    "start": "node bin/anchr.js",
+    "lint": "eslint .",
+    "test": "node --test tests/"
+  },
+  "license": "MIT",
+  "keywords": ["solana", "ipfs", "sns", "web3", "hosting", "cli", "storacha"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_USERNAME/anchr.git"
+  },
+  "dependencies": {
+    "@storacha/client": "*",
+    "@bonfida/spl-name-service": "^3.0.19",
+    "@solana/web3.js": "*",
+    "files-from-path": "*",
+    "commander": "*"
+  },
+  "devDependencies": {
+    "eslint": "*",
+    "@eslint/js": "*"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
