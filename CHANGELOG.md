@@ -7,7 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- Nothing yet.
+- Filebase as an alternate pinning provider (`lib/filebase.js`), selectable
+  via `"provider": "filebase"` in `anchr.json`. Added as a fallback after
+  Storacha's `up.storacha.network` upload endpoint was found unreachable
+  from multiple independent networks (Codespaces, Replit, and direct
+  mobile — confirmed via DNS_PROBE_FINISHED_NXDOMAIN), pointing to a
+  provider-side issue rather than anything environment-specific.
+
+### Known gaps
+- The exact field name for the CID on `@filebase/sdk`'s upload result
+  isn't independently confirmed from docs alone — verify against a real
+  response before relying on it (see comment in `lib/filebase.js`).
 
 ## [0.1.0] - 2026-07-12
 

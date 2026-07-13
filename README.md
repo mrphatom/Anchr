@@ -1,11 +1,13 @@
-# Anchr CLI (MVP) 
+# Anchr CLI (MVP)
 
-[![CI](https://github.com/mrphatom/anchr/actions/workflows/ci.yml/badge.svg)](https://github.com/mrphatom/anchr/actions/workflows/ci.yml)
+[![CI](https://github.com/YOUR_USERNAME/anchr/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/anchr/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Deploy static frontends to IPFS and resolve them via a Solana Name Service
 (`.sol`) domain — `init` and `deploy`, nothing else, on purpose.
 
+> Replace `YOUR_USERNAME` in the badge URLs and in `package.json`'s
+> `repository` field once this is pushed to your actual GitHub repo.
 
 ## Project structure
 
@@ -76,6 +78,18 @@ that weren't shown together in a single verified example — it should work,
 but confirm it on devnet before pointing it at a mainnet domain you care
 about. After deploying, use `readIpfsRecord()` to confirm the record
 actually landed correctly before trusting the CLI's own success message.
+
+## Alternate pinning provider (Filebase)
+
+Storacha is the default, but if its upload endpoint is unreachable, set
+`"provider": "filebase"` in `anchr.json` and fill in the Filebase env vars
+in `.env` (see `.env.example`) instead. It uses Filebase's S3-compatible
+upload path under the hood (`@filebase/sdk`'s `ObjectManager`), not their
+IPFS Pinning Service API — that API is for re-pinning an *existing* CID,
+not uploading new local content, so it doesn't fit Anchr's use case.
+
+This is a fallback switch, not a "run both" setup — only one provider is
+active per deploy, matching the MVP's "one pinning provider" scope.
 
 ## Known prior art
 

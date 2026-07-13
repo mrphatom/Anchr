@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node bin/anchr.js",
     "lint": "eslint .",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/"
   },
   "license": "MIT",
   "keywords": ["solana", "ipfs", "sns", "web3", "hosting", "cli", "storacha"],
@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@storacha/client": "*",
+    "@filebase/sdk": "*",
     "@bonfida/spl-name-service": "^3.0.19",
     "@solana/web3.js": "*",
     "files-from-path": "*",
