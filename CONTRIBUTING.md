@@ -20,7 +20,7 @@ the MVP is stable will likely be deferred.
 ## Development setup
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/anchr.git
+git clone https://github.com/mrphatom/anchr.git
 cd anchr
 npm install
 cp .env.example .env   # fill in your own credentials — see README.md
