@@ -1,0 +1,146 @@
+/**
+ * devnet-test.js — Standalone, throwaway verification script.
+ *
+ * NOT part of the Anchr CLI (MVP scope is locked to `init`/`deploy` only —
+ * see docs/ROADMAP.md). This exists purely to verify the SNS write path
+ * actually works before trusting lib/sns.js or turning deploy.yml's
+ * auto-trigger on. Run manually with:
+ *
+ *   node scripts/devnet-test.js
+ *
+ * Uses Solana DEVNET only. Devnet SOL is free and worthless — this is
+ * safe to run as many times as needed, unlike anything touching mainnet.
+ *
+ * STATUS OF WHAT'S VERIFIED vs GUESSED:
+ *  - Devnet domain registration (devnet.bindings.registerDomainNameV2) —
+ *    CONFIRMED against Bonfida's own docs.
+ *  - Devnet program ID for the SNS Registrar — CONFIRMED against
+ *    Bonfida/sns-registrar's own GitHub README.
+ *  - Domain registration requires payment in WRAPPED SOL, not native SOL —
+ *    CONFIRMED (stated explicitly in Bonfida's registration docs).
+ *  - The exact function name for *writing* an IPFS record on devnet —
+ *    NOT independently confirmed. This script logs the real list of
+ *    available devnet.bindings functions at runtime specifically so we
+ *    don't have to guess — check that output if the write step below fails.
+ */
+
+import {
+  Connection,
+  Keypair,
+  Transaction,
+  sendAndConfirmTransaction,
+  SystemProgram
+} from '@solana/web3.js';
+import {
+  getAssociatedTokenAddressSync,
+  createAssociatedTokenAccountInstruction,
+  createSyncNativeInstruction,
+  NATIVE_MINT
+} from '@solana/spl-token';
+import {
+  devnet,
+  getDomainKeySync,
+  updateNameRegistryData,
+  NameRegistryState
+} from '@bonfida/spl-name-service';
+
+const DEVNET_RPC = 'https://api.devnet.solana.com';
+const TEST_DOMAIN = `anchr-test-${Date.now()}`; // unique per run, avoids collisions
+const WRAP_AMOUNT_SOL = 0.05; // covers registration fee + rent; bump if it fails
+const FAKE_CID = 'bafybeigdyrztestcidxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+
+async function main() {
+  const connection = new Connection(DEVNET_RPC, 'confirmed');
+
+  console.log('Available devnet.bindings functions:', Object.keys(devnet.bindings));
+  console.log('Available devnet.utils functions:', Object.keys(devnet.utils));
+  console.log('');
+
+  // 1. Throwaway keypair — never reuse a real wallet for this
+  const wallet = Keypair.generate();
+  console.log('Test wallet:', wallet.publicKey.toBase58());
+
+  // 2. Airdrop devnet SOL
+  console.log('Requesting devnet airdrop (1 SOL)...');
+  try {
+    const airdropSig = await connection.requestAirdrop(wallet.publicKey, 1_000_000_000);
+    await connection.confirmTransaction(airdropSig, 'confirmed');
+    console.log('Airdrop confirmed.');
+  } catch (err) {
+    console.error(
+      'Airdrop failed (devnet faucet is often rate-limited). Manually fund this address ' +
+      `at https://faucet.solana.com, then re-run.\nAddress: ${wallet.publicKey.toBase58()}`
+    );
+    throw err;
+  }
+
+  // 3. Wrap SOL into wSOL — registration pays in wrapped SOL, not native SOL
+  const ata = getAssociatedTokenAddressSync(NATIVE_MINT, wallet.publicKey);
+  console.log(`Wrapping ${WRAP_AMOUNT_SOL} SOL...`);
+  const wrapTx = new Transaction().add(
+    createAssociatedTokenAccountInstruction(wallet.publicKey, ata, wallet.publicKey, NATIVE_MINT),
+    SystemProgram.transfer({
+      fromPubkey: wallet.publicKey,
+      toPubkey: ata,
+      lamports: Math.round(WRAP_AMOUNT_SOL * 1_000_000_000)
+    }),
+    createSyncNativeInstruction(ata)
+  );
+  await sendAndConfirmTransaction(connection, wrapTx, [wallet]);
+  console.log('Wrapped.');
+
+  // 4. Register a throwaway devnet domain — CONFIRMED pattern
+  console.log(`\nRegistering devnet domain: ${TEST_DOMAIN}`);
+  const registerIx = await devnet.bindings.registerDomainNameV2(
+    connection,
+    TEST_DOMAIN,
+    1_000,
+    wallet.publicKey,
+    ata,
+    NATIVE_MINT
+  );
+  const registerTx = new Transaction().add(registerIx);
+  const registerSig = await sendAndConfirmTransaction(connection, registerTx, [wallet]);
+  console.log('Domain registered. Tx:', `https://explorer.solana.com/tx/${registerSig}?cluster=devnet`);
+
+  // 5. Write a fake IPFS record — THIS is the part we're actually verifying.
+  //    Using the mainnet-level function names with devnet's ROOT_DOMAIN_ACCOUNT
+  //    passed in — UNCONFIRMED whether this correctly targets devnet's program,
+  //    since NAME_PROGRAM_ID itself may be hardcoded internally. If this
+  //    throws or produces a mismatch on readback, check the bindings list
+  //    printed above for the real devnet-specific write function instead.
+  console.log('\nAttempting IPFS record write...');
+  const recordName = `IPFS.${TEST_DOMAIN}`;
+  const data = Buffer.from(FAKE_CID, 'utf-8');
+
+  const writeIx = await updateNameRegistryData(
+    connection,
+    recordName,
+    0,
+    data,
+    undefined,
+    devnet.constants.ROOT_DOMAIN_ACCOUNT
+  );
+  const writeTx = new Transaction().add(writeIx);
+  const writeSig = await sendAndConfirmTransaction(connection, writeTx, [wallet]);
+  console.log('Write tx sent:', `https://explorer.solana.com/tx/${writeSig}?cluster=devnet`);
+
+  // 6. Read it back to confirm the write actually landed correctly
+  const { pubkey } = getDomainKeySync(recordName, true);
+  const { registry } = await NameRegistryState.retrieve(connection, pubkey);
+  const readBack = registry.data ? registry.data.toString('utf-8').replace(/\0/g, '') : null;
+
+  console.log('\n--- RESULT ---');
+  console.log('Wrote:     ', FAKE_CID);
+  console.log('Read back: ', readBack);
+  console.log(
+    readBack === FAKE_CID
+      ? '✅ MATCH — the write path in lib/sns.js works as-is.'
+      : '❌ MISMATCH — do not trust lib/sns.js yet. Check the devnet.bindings list above for the correct write function.'
+  );
+}
+
+main().catch((err) => {
+  console.error('\n❌ Devnet test failed:', err);
+  process.exit(1);
+});
