@@ -19,9 +19,17 @@
  *  - Domain registration requires payment in WRAPPED SOL, not native SOL —
  *    CONFIRMED (stated explicitly in Bonfida's registration docs).
  *  - The exact function name for *writing* an IPFS record on devnet —
- *    NOT independently confirmed. This script logs the real list of
- *    available devnet.bindings functions at runtime specifically so we
- *    don't have to guess — check that output if the write step below fails.
+ *    CONFIRMED via a live run of this script: devnet.bindings.updateNameRegistryData
+ *    exists (separate from the top-level mainnet function), and so does
+ *    devnet.utils.getDomainKeySync for correctly deriving the devnet PDA.
+ *  - BONUS FIND: devnet.bindings also exposes createRecordV2Instruction /
+ *    updateRecordV2Instruction — meaning V2 record support (marked as an
+ *    unresolved TODO in lib/sns.js) may genuinely exist. Not yet tested —
+ *    this script only exercises the V1 path so far.
+ *  - NOT YET CONFIRMED: whether an actual write+readback round-trip
+ *    succeeds end-to-end (this run failed earlier at the airdrop step,
+ *    before reaching the write). That's what running this script to
+ *    completion will confirm.
  */
 
 import {
@@ -39,8 +47,6 @@ import {
 } from '@solana/spl-token';
 import {
   devnet,
-  getDomainKeySync,
-  updateNameRegistryData,
   NameRegistryState
 } from '@bonfida/spl-name-service';
 
@@ -104,16 +110,21 @@ async function main() {
   console.log('Domain registered. Tx:', `https://explorer.solana.com/tx/${registerSig}?cluster=devnet`);
 
   // 5. Write a fake IPFS record — THIS is the part we're actually verifying.
-  //    Using the mainnet-level function names with devnet's ROOT_DOMAIN_ACCOUNT
-  //    passed in — UNCONFIRMED whether this correctly targets devnet's program,
-  //    since NAME_PROGRAM_ID itself may be hardcoded internally. If this
-  //    throws or produces a mismatch on readback, check the bindings list
-  //    printed above for the real devnet-specific write function instead.
+  //    CONFIRMED (from a live run of this script): devnet.bindings exposes
+  //    its own updateNameRegistryData, separate from the top-level mainnet
+  //    function — using that dedicated devnet binding rather than the
+  //    mainnet one, since devnet runs its own program deployment.
+  //
+  //    Also confirmed from that same run: devnet.bindings also exposes
+  //    createRecordV2Instruction / updateRecordV2Instruction — meaning the
+  //    V2 write path marked as a TODO in lib/sns.js may actually exist
+  //    after all. Worth testing that separately once this V1 devnet test
+  //    passes cleanly.
   console.log('\nAttempting IPFS record write...');
   const recordName = `IPFS.${TEST_DOMAIN}`;
   const data = Buffer.from(FAKE_CID, 'utf-8');
 
-  const writeIx = await updateNameRegistryData(
+  const writeIx = await devnet.bindings.updateNameRegistryData(
     connection,
     recordName,
     0,
@@ -125,8 +136,11 @@ async function main() {
   const writeSig = await sendAndConfirmTransaction(connection, writeTx, [wallet]);
   console.log('Write tx sent:', `https://explorer.solana.com/tx/${writeSig}?cluster=devnet`);
 
-  // 6. Read it back to confirm the write actually landed correctly
-  const { pubkey } = getDomainKeySync(recordName, true);
+  // 6. Read it back to confirm the write actually landed correctly.
+  //    Using devnet.utils.getDomainKeySync (confirmed to exist separately
+  //    from the top-level version) so the derived pubkey actually matches
+  //    devnet's program deployment.
+  const { pubkey } = devnet.utils.getDomainKeySync(recordName, true);
   const { registry } = await NameRegistryState.retrieve(connection, pubkey);
   const readBack = registry.data ? registry.data.toString('utf-8').replace(/\0/g, '') : null;
 
@@ -135,7 +149,10 @@ async function main() {
   console.log('Read back: ', readBack);
   console.log(
     readBack === FAKE_CID
-      ? '✅ MATCH — the write path in lib/sns.js works as-is.'
+      ? '✅ MATCH — the V1 write/read pattern works. lib/sns.js uses the ' +
+        'mainnet-equivalent functions of the same names, so this validates ' +
+        'the approach, though lib/sns.js itself should still get one live ' +
+        'mainnet run before fully trusting it.'
       : '❌ MISMATCH — do not trust lib/sns.js yet. Check the devnet.bindings list above for the correct write function.'
   );
 }
