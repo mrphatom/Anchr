@@ -9,13 +9,13 @@
   "scripts": {
     "start": "node bin/anchr.js",
     "lint": "eslint .",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/"
   },
   "license": "MIT",
   "keywords": ["solana", "ipfs", "sns", "web3", "hosting", "cli", "storacha"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/mrphatom/anchr.git"
+    "url": "https://github.com/mrphatom/Anchr.git"
   },
   "dependencies": {
     "@storacha/client": "*",
@@ -27,7 +27,8 @@
   },
   "devDependencies": {
     "eslint": "*",
-    "@eslint/js": "*"
+    "@eslint/js": "*",
+    "@solana/spl-token": "*"
   },
   "engines": {
     "node": ">=18"
