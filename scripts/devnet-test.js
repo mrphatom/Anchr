@@ -32,6 +32,7 @@
  *    completion will confirm.
  */
 
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import {
   Connection,
   Keypair,
@@ -51,9 +52,27 @@ import {
 } from '@bonfida/spl-name-service';
 
 const DEVNET_RPC = 'https://api.devnet.solana.com';
-const TEST_DOMAIN = `anchr-test-${Date.now()}`; // unique per run, avoids collisions
+const TEST_DOMAIN = `anchr-test-${Date.now()}`; // unique per run, avoids domain collisions
 const WRAP_AMOUNT_SOL = 0.05; // covers registration fee + rent; bump if it fails
 const FAKE_CID = 'bafybeigdyrztestcidxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+const WALLET_FILE = '.devnet-test-wallet.json';
+
+/**
+ * The wallet is the thing that needs devnet SOL — unlike TEST_DOMAIN, it
+ * must stay THE SAME across runs when the automated airdrop fails and
+ * you're funding it manually via faucet.solana.com. Without this, every
+ * re-run would generate a fresh throwaway address, abandoning whatever
+ * you just funded. Delete this file if you ever want a clean new wallet.
+ */
+function loadOrCreateWallet() {
+  if (existsSync(WALLET_FILE)) {
+    const secretKey = Uint8Array.from(JSON.parse(readFileSync(WALLET_FILE, 'utf-8')));
+    return { wallet: Keypair.fromSecretKey(secretKey), reused: true };
+  }
+  const wallet = Keypair.generate();
+  writeFileSync(WALLET_FILE, JSON.stringify(Array.from(wallet.secretKey)));
+  return { wallet, reused: false };
+}
 
 async function main() {
   const connection = new Connection(DEVNET_RPC, 'confirmed');
@@ -62,22 +81,30 @@ async function main() {
   console.log('Available devnet.utils functions:', Object.keys(devnet.utils));
   console.log('');
 
-  // 1. Throwaway keypair — never reuse a real wallet for this
-  const wallet = Keypair.generate();
-  console.log('Test wallet:', wallet.publicKey.toBase58());
+  // 1. Reuse the same throwaway wallet across runs (see loadOrCreateWallet
+  //    comment above) — never reuse a REAL wallet for this, only this
+  //    disposable devnet-only one.
+  const { wallet, reused } = loadOrCreateWallet();
+  console.log(`Test wallet (${reused ? 'reused from last run' : 'newly generated'}):`, wallet.publicKey.toBase58());
 
-  // 2. Airdrop devnet SOL
-  console.log('Requesting devnet airdrop (1 SOL)...');
-  try {
-    const airdropSig = await connection.requestAirdrop(wallet.publicKey, 1_000_000_000);
-    await connection.confirmTransaction(airdropSig, 'confirmed');
-    console.log('Airdrop confirmed.');
-  } catch (err) {
-    console.error(
-      'Airdrop failed (devnet faucet is often rate-limited). Manually fund this address ' +
-      `at https://faucet.solana.com, then re-run.\nAddress: ${wallet.publicKey.toBase58()}`
-    );
-    throw err;
+  // 2. Airdrop devnet SOL — skip if this wallet already has enough
+  const existingBalance = await connection.getBalance(wallet.publicKey);
+  if (existingBalance >= 0.02 * 1_000_000_000) {
+    console.log(`Wallet already funded (${existingBalance / 1_000_000_000} SOL) — skipping airdrop.`);
+  } else {
+    console.log('Requesting devnet airdrop (1 SOL)...');
+    try {
+      const airdropSig = await connection.requestAirdrop(wallet.publicKey, 1_000_000_000);
+      await connection.confirmTransaction(airdropSig, 'confirmed');
+      console.log('Airdrop confirmed.');
+    } catch (err) {
+      console.error(
+        'Airdrop failed (devnet faucet is often rate-limited). Manually fund this address ' +
+        `at https://faucet.solana.com, then re-run — this SAME wallet will be reused ` +
+        `next time, so funding it once is enough.\nAddress: ${wallet.publicKey.toBase58()}`
+      );
+      throw err;
+    }
   }
 
   // 3. Wrap SOL into wSOL — registration pays in wrapped SOL, not native SOL
