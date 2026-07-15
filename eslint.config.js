@@ -13,14 +13,13 @@ export default [
       globals: {
         process: 'readonly',
         console: 'readonly',
-        Buffer: 'readonly'
+        Buffer: 'readonly',
+        setTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearTimeout: 'readonly',
+        clearInterval: 'readonly'
       }
     },
-    "env": {
-      "node": true,
-      "es2021": true
-    }
-  },
     rules: {
       'no-unused-vars': 'warn',
       'no-console': 'off'
