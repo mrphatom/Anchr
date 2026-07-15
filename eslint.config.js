@@ -16,6 +16,11 @@ export default [
         Buffer: 'readonly'
       }
     },
+    "env": {
+      "node": true,
+      "es2021": true
+    }
+  },
     rules: {
       'no-unused-vars': 'warn',
       'no-console': 'off'
