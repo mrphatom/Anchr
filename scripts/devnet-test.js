@@ -33,11 +33,11 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { inspect } from 'node:util';
 import {
   Connection,
   Keypair,
   Transaction,
-  sendAndConfirmTransaction,
   SystemProgram
 } from '@solana/web3.js';
 import {
@@ -51,7 +51,12 @@ import {
   NameRegistryState
 } from '@bonfida/spl-name-service';
 
-const DEVNET_RPC = 'https://api.devnet.solana.com';
+// Defaults to the public devnet RPC, but that's shared across every Replit
+// user (and everyone else) hitting it at once, so it's prone to sustained
+// 429s that have nothing to do with your own request volume. Set
+// ANCHR_DEVNET_RPC_URL to a free dedicated endpoint (Helius, QuickNode,
+// Syndica, Alchemy, etc.) to get a quota that's actually yours alone.
+const DEVNET_RPC = process.env.ANCHR_DEVNET_RPC_URL || 'https://api.devnet.solana.com';
 const TEST_DOMAIN = `anchr-test-${Date.now()}`; // unique per run, avoids domain collisions
 const WRAP_AMOUNT_SOL = 0.05; // covers registration fee + rent; bump if it fails
 const FAKE_CID = 'bafybeigdyrztestcidxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
@@ -74,8 +79,47 @@ function loadOrCreateWallet() {
   return { wallet, reused: false };
 }
 
+/**
+ * Sends and confirms a transaction WITHOUT relying on WebSocket signature
+ * subscriptions (the default confirmation strategy in @solana/web3.js).
+ *
+ * CONFIRMED NEEDED via a live run: Alchemy's endpoint here doesn't support
+ * the `signatureSubscribe` RPC method, so the library's built-in
+ * sendAndConfirmTransaction hangs on repeated "Method not found" errors
+ * and eventually times out with TransactionExpiredBlockheightExceededError
+ * — even when the transaction actually landed on-chain. Polling via
+ * getSignatureStatus works with any RPC provider regardless of WS support.
+ */
+async function sendAndConfirm(connection, transaction, signers) {
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+  transaction.recentBlockhash = blockhash;
+  transaction.feePayer = signers[0].publicKey;
+  transaction.sign(...signers);
+
+  const signature = await connection.sendRawTransaction(transaction.serialize());
+
+  const start = Date.now();
+  while (Date.now() - start < 60_000) {
+    const { value } = await connection.getSignatureStatus(signature);
+    if (value?.err) {
+      throw new Error(`Transaction failed: ${JSON.stringify(value.err)}`);
+    }
+    if (value?.confirmationStatus === 'confirmed' || value?.confirmationStatus === 'finalized') {
+      return signature;
+    }
+    const blockHeight = await connection.getBlockHeight();
+    if (blockHeight > lastValidBlockHeight) {
+      throw new Error(`Transaction expired before confirmation: ${signature}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  throw new Error(`Confirmation timed out after 60s: ${signature}`);
+}
+
 async function main() {
   const connection = new Connection(DEVNET_RPC, 'confirmed');
+  console.log('Using RPC:', DEVNET_RPC);
+  console.log('');
 
   console.log('Available devnet.bindings functions:', Object.keys(devnet.bindings));
   console.log('Available devnet.utils functions:', Object.keys(devnet.utils));
@@ -95,7 +139,17 @@ async function main() {
     console.log('Requesting devnet airdrop (1 SOL)...');
     try {
       const airdropSig = await connection.requestAirdrop(wallet.publicKey, 1_000_000_000);
-      await connection.confirmTransaction(airdropSig, 'confirmed');
+      const start = Date.now();
+      let confirmed = false;
+      while (Date.now() - start < 30_000) {
+        const { value } = await connection.getSignatureStatus(airdropSig);
+        if (value?.confirmationStatus === 'confirmed' || value?.confirmationStatus === 'finalized') {
+          confirmed = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+      if (!confirmed) throw new Error('Airdrop confirmation timed out');
       console.log('Airdrop confirmed.');
     } catch (err) {
       console.error(
@@ -107,22 +161,34 @@ async function main() {
     }
   }
 
-  // 3. Wrap SOL into wSOL — registration pays in wrapped SOL, not native SOL
+  // 3. Wrap SOL into wSOL — but only if this wallet doesn't already have a
+  //    wrapped-SOL account from a previous run. Re-running the create
+  //    instruction on an already-existing account fails with "Provided
+  //    owner is not allowed" — same reused-wallet issue as the airdrop
+  //    check above, just one step later.
   const ata = getAssociatedTokenAddressSync(NATIVE_MINT, wallet.publicKey);
-  console.log(`Wrapping ${WRAP_AMOUNT_SOL} SOL...`);
-  const wrapTx = new Transaction().add(
-    createAssociatedTokenAccountInstruction(wallet.publicKey, ata, wallet.publicKey, NATIVE_MINT),
-    SystemProgram.transfer({
-      fromPubkey: wallet.publicKey,
-      toPubkey: ata,
-      lamports: Math.round(WRAP_AMOUNT_SOL * 1_000_000_000)
-    }),
-    createSyncNativeInstruction(ata)
-  );
-  await sendAndConfirmTransaction(connection, wrapTx, [wallet]);
-  console.log('Wrapped.');
+  const ataInfo = await connection.getAccountInfo(ata);
+  if (ataInfo) {
+    console.log('Wrapped SOL account already exists from a previous run — skipping wrap step.');
+  } else {
+    console.log(`Wrapping ${WRAP_AMOUNT_SOL} SOL...`);
+    const wrapTx = new Transaction().add(
+      createAssociatedTokenAccountInstruction(wallet.publicKey, ata, wallet.publicKey, NATIVE_MINT),
+      SystemProgram.transfer({
+        fromPubkey: wallet.publicKey,
+        toPubkey: ata,
+        lamports: Math.round(WRAP_AMOUNT_SOL * 1_000_000_000)
+      }),
+      createSyncNativeInstruction(ata)
+    );
+    await sendAndConfirm(connection, wrapTx, [wallet]);
+    console.log('Wrapped.');
+  }
 
-  // 4. Register a throwaway devnet domain — CONFIRMED pattern
+  // 4. Register a throwaway devnet domain — CONFIRMED pattern for the call
+  //    itself, but the exact SHAPE of what it returns (single instruction
+  //    vs an array of instructions) wasn't independently verified. Logging
+  //    it and handling both shapes rather than guessing.
   console.log(`\nRegistering devnet domain: ${TEST_DOMAIN}`);
   const registerIx = await devnet.bindings.registerDomainNameV2(
     connection,
@@ -132,25 +198,69 @@ async function main() {
     ata,
     NATIVE_MINT
   );
-  const registerTx = new Transaction().add(registerIx);
-  const registerSig = await sendAndConfirmTransaction(connection, registerTx, [wallet]);
+  console.log('registerDomainNameV2 returned:', Array.isArray(registerIx) ? `array of ${registerIx.length}` : typeof registerIx);
+
+  const registerTx = new Transaction();
+  if (Array.isArray(registerIx)) {
+    registerTx.add(...registerIx);
+  } else {
+    registerTx.add(registerIx);
+  }
+  const registerSig = await sendAndConfirm(connection, registerTx, [wallet]);
   console.log('Domain registered. Tx:', `https://explorer.solana.com/tx/${registerSig}?cluster=devnet`);
 
   // 5. Write a fake IPFS record — THIS is the part we're actually verifying.
-  //    CONFIRMED (from a live run of this script): devnet.bindings exposes
-  //    its own updateNameRegistryData, separate from the top-level mainnet
-  //    function — using that dedicated devnet binding rather than the
-  //    mainnet one, since devnet runs its own program deployment.
-  //
-  //    Also confirmed from that same run: devnet.bindings also exposes
-  //    createRecordV2Instruction / updateRecordV2Instruction — meaning the
-  //    V2 write path marked as a TODO in lib/sns.js may actually exist
-  //    after all. Worth testing that separately once this V1 devnet test
-  //    passes cleanly.
-  console.log('\nAttempting IPFS record write...');
+  //    CONFIRMED via a live run: the record account must be CREATED before
+  //    it can be UPDATED — updateNameRegistryData alone fails with
+  //    "AccountDoesNotExist" on a brand-new domain's record. Attempting
+  //    devnet.bindings.createNameRegistry first, based on the standard
+  //    SPL Name Service Create instruction shape (name, space, payer,
+  //    nameOwner, nameClass, nameParent) — NOT independently confirmed
+  //    for this exact JS wrapper's parameter order, so if this throws,
+  //    the error message is the next real signal to go on.
+  console.log('\nCreating record account (if it does not already exist)...');
   const recordName = `IPFS.${TEST_DOMAIN}`;
   const data = Buffer.from(FAKE_CID, 'utf-8');
+  const RECORD_SPACE = 1_000; // bytes to allocate — generous for a CID string
 
+  try {
+    const createIx = await devnet.bindings.createNameRegistry(
+      connection,
+      recordName,
+      RECORD_SPACE,
+      wallet.publicKey, // payer
+      wallet.publicKey, // name owner
+      undefined,        // lamports (let it compute rent-exemption automatically)
+      undefined,        // nameClass
+      devnet.constants.ROOT_DOMAIN_ACCOUNT // nameParent
+    );
+    console.log(
+      'createNameRegistry returned:',
+      Array.isArray(createIx)
+        ? `array of ${createIx.length}`
+        : `object with keys: ${Object.keys(createIx || {}).join(', ')}`
+    );
+    if (!Array.isArray(createIx) && !createIx?.programId) {
+      // Doesn't look like a plain TransactionInstruction — likely a
+      // compound object (e.g. instruction + a generated signer). Full
+      // dump to see exactly what's actually in it.
+      console.log('Full structure:', inspect(createIx, { depth: 4 }));
+    }
+    const createTx = new Transaction();
+    if (Array.isArray(createIx)) {
+      createTx.add(...createIx);
+    } else {
+      createTx.add(createIx);
+    }
+    const createSig = await sendAndConfirm(connection, createTx, [wallet]);
+    console.log('Record account created. Tx:', `https://explorer.solana.com/tx/${createSig}?cluster=devnet`);
+  } catch (err) {
+    console.log('createNameRegistry failed (may already exist, or the guessed params above are wrong):');
+    console.log(err.message || err);
+    console.log('Proceeding to the update step regardless — if that also fails, this create step needs fixing first.');
+  }
+
+  console.log('\nAttempting IPFS record write...');
   const writeIx = await devnet.bindings.updateNameRegistryData(
     connection,
     recordName,
@@ -159,8 +269,15 @@ async function main() {
     undefined,
     devnet.constants.ROOT_DOMAIN_ACCOUNT
   );
-  const writeTx = new Transaction().add(writeIx);
-  const writeSig = await sendAndConfirmTransaction(connection, writeTx, [wallet]);
+  console.log('updateNameRegistryData returned:', Array.isArray(writeIx) ? `array of ${writeIx.length}` : typeof writeIx);
+
+  const writeTx = new Transaction();
+  if (Array.isArray(writeIx)) {
+    writeTx.add(...writeIx);
+  } else {
+    writeTx.add(writeIx);
+  }
+  const writeSig = await sendAndConfirm(connection, writeTx, [wallet]);
   console.log('Write tx sent:', `https://explorer.solana.com/tx/${writeSig}?cluster=devnet`);
 
   // 6. Read it back to confirm the write actually landed correctly.
