@@ -62,8 +62,9 @@ npm install
 
 ```bash
 anchr init      # detects your framework, writes anchr.json
-# → edit anchr.json, set "domain" to your .sol domain (no ".sol" suffix)
-anchr deploy    # builds, pins to Storacha, writes the SNS IPFS record
+anchr deploy    # builds + pins to IPFS; also writes the SNS record if
+                # anchr.json has a "domain" set (optional — omit it to
+                # just get a pinned CID + gateway link)
 ```
 
 ## ⚠️ Before running against a real domain
