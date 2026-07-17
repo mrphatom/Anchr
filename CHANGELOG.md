@@ -6,7 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Milestone
+- First successful live Anchr deploy: a Vite site built, pinned via
+  Filebase, and confirmed fully rendering (including interactivity/HMR)
+  at a real IPFS gateway URL.
+
 ### Fixed
+- `detectFramework` now warns about the relative-asset-path requirement
+  for IPFS hosting (`base: './'` for Vite, `"homepage": "."` for CRA) —
+  discovered via the first real deploy, which rendered blank until this
+  was set. Default absolute paths break because IPFS serves content from
+  a `/ipfs/<CID>/` subpath, not domain root.
 - `anchr deploy` no longer hard-requires a `domain` in `anchr.json`. You
   can now build + pin to IPFS and get a working gateway link without
   owning a `.sol` domain yet — the SNS record write is skipped (not
