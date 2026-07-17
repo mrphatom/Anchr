@@ -6,11 +6,11 @@
 - Pinning provider comparison — picked Storacha over Filebase (more IPFS-native,
   UCAN auth, pre-built GitHub Action integration)
 
-## Week 2 — CLI (in progress)
+## Week 2 — CLI (done)
 - `anchr init` / `anchr deploy` — implemented, this repo
 - Wire against one real test repo end-to-end and confirm a first live deploy
 
-## Week 3 — Dashboard + automation
+## Week 3 — Dashboard + automation (In progress)
 - Single dashboard page: deploy status + live preview link
 - GitHub webhook trigger (turns `deploy.yml` from manual into automatic)
 - Devnet verification of the SNS write path; decide on the SNS V2 write function
