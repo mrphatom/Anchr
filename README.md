@@ -14,7 +14,7 @@ lib/               init/deploy orchestration, framework detection,
                     Storacha upload, SNS record read/write
 tests/             unit tests (Node's built-in test runner)
 docs/              architecture + roadmap (useful for grant write-ups)
-examples/          how to spin up a test site to deploy against
+example/           how to spin up a test site to deploy against
 .github/           CI, issue/PR templates, dependabot
 ```
 
@@ -76,6 +76,16 @@ that weren't shown together in a single verified example — it should work,
 but confirm it on devnet before pointing it at a mainnet domain you care
 about. After deploying, use `readIpfsRecord()` to confirm the record
 actually landed correctly before trusting the CLI's own success message.
+
+## Relative asset paths (important)
+
+IPFS serves your site from a `/ipfs/<CID>/` subpath, not domain root — so
+default absolute asset paths will produce a **blank page**, even though
+the deploy itself succeeds. Confirmed via a real deploy: Vite needs
+`base: './'` in `vite.config.js` (`anchr init` prints this as a note
+when it detects Vite). CRA needs `"homepage": "."` in `package.json`.
+Next.js likely needs a similar `assetPrefix` fix but this hasn't been
+confirmed with a real deploy yet.
 
 ## Alternate pinning provider (Filebase)
 
