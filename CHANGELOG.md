@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- `lib/sns.js` now uses **SNS V2 record functions** (`createRecordV2Instruction`
+  / `updateRecordV2Instruction`) as the primary write path, replacing V1
+  entirely. V1's `createNameRegistry` was abandoned after repeated
+  unexplained "missing signature" errors across multiple devnet attempts.
+  V2's signature was read directly from the installed package's source
+  (not guessed) and confirmed working via a real devnet transaction whose
+  program logs showed both the account-allocation ("Create") and the
+  content write ("Update Data") succeeding — not just a passing
+  transaction status. `readIpfsRecord` now uses the equivalent
+  `getRecordV2`, which is well-documented on the read side (unlike V1's
+  read path, which relied on a public-docs synthesis that was never
+  independently confirmed).
+
 ### Milestone
 - First successful live Anchr deploy: a Vite site built, pinned via
   Filebase, and confirmed fully rendering (including interactivity/HMR)
@@ -45,13 +59,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The exact field name for the CID on `@filebase/sdk`'s upload result
   isn't independently confirmed from docs alone — verify against a real
   response before relying on it (see comment in `lib/filebase.js`).
-- SNS V1 record creation on a brand-new domain (`createNameRegistry`) is
-  NOT working yet — fails with a "missing signature" error during live
-  devnet testing, parameter order unconfirmed. `lib/sns.js`'s
-  `writeIpfsRecord` currently assumes the record account already exists.
-  Domain *registration* itself (`registerDomainNameV2`) is fully confirmed
-  working end-to-end on devnet. See `lib/sns.js` comments and project
-  memory for full context — paused here rather than keep guessing blind.
+- `writeIpfsRecord`'s update-fallback path (used when a record already
+  exists) hasn't been independently tested end-to-end — only the
+  create-a-fresh-record path has a confirmed successful transaction. If
+  you hit the fallback, verify with `readIpfsRecord` before trusting it.
 
 ## [0.1.0] - 2026-07-12
 
