@@ -15,16 +15,21 @@ lib/               init/deploy orchestration, framework detection,
 tests/             unit tests (Node's built-in test runner)
 docs/              architecture + roadmap (useful for grant write-ups)
 example/           how to spin up a test site to deploy against
+dashboard/         status/pitch site for the project, deployed through
+                    Anchr itself — its own package.json, separate from
+                    the CLI's
 .github/           CI, issue/PR templates, dependabot
 ```
 
 ## Scope (locked for MVP)
 
 - Frameworks: Vite, Next.js (static export only), Create React App
-- Pinning: Storacha only
-- Domains: SNS (`.sol`) only, **V1 record format** (see `lib/sns.js` for why —
-  V2 write support needs one more verification pass before it's safe to wire in)
-- No `logs`, no env-var UI, no multi-provider pinning — that's all v2+
+- Pinning: Storacha (default) or Filebase (fallback) — see "Alternate
+  pinning provider" below
+- Domains: SNS (`.sol`) only, **V2 record format** — confirmed working via
+  a real devnet transaction (see `lib/sns.js` and `CHANGELOG.md`); V1 was
+  tried first and abandoned after repeated unexplained signer errors
+- No `logs`, no env-var UI, no multi-provider-at-once pinning — that's all v2+
 
 ## One-time setup
 
@@ -69,13 +74,14 @@ anchr deploy    # builds + pins to IPFS; also writes the SNS record if
 
 ## ⚠️ Before running against a real domain
 
-Test against a **devnet** domain first (set `ANCHR_SOLANA_RPC_URL` to
-`https://api.devnet.solana.com` in `.env`). The SNS write path
-(`lib/sns.js`) combines two separately-documented pieces of Bonfida's SDK
-that weren't shown together in a single verified example — it should work,
-but confirm it on devnet before pointing it at a mainnet domain you care
-about. After deploying, use `readIpfsRecord()` to confirm the record
-actually landed correctly before trusting the CLI's own success message.
+The SNS write path (V2 record format) is confirmed working via a real
+devnet transaction — but only the "create a fresh record" path has that
+confirmation. If a domain already has a record set, `writeIpfsRecord`
+falls back to an update path that hasn't been independently tested
+end-to-end. Test against a **devnet** domain first (set
+`ANCHR_SOLANA_RPC_URL` to `https://api.devnet.solana.com` in `.env`),
+and use `readIpfsRecord()` afterward to confirm the record actually
+landed correctly before trusting the CLI's own success message.
 
 ## Relative asset paths (important)
 
