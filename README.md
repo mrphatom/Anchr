@@ -74,14 +74,21 @@ anchr deploy    # builds + pins to IPFS; also writes the SNS record if
 
 ## ⚠️ Before running against a real domain
 
-The SNS write path (V2 record format) is confirmed working via a real
-devnet transaction — but only the "create a fresh record" path has that
-confirmation. If a domain already has a record set, `writeIpfsRecord`
-falls back to an update path that hasn't been independently tested
-end-to-end. Test against a **devnet** domain first (set
-`ANCHR_SOLANA_RPC_URL` to `https://api.devnet.solana.com` in `.env`),
-and use `readIpfsRecord()` afterward to confirm the record actually
-landed correctly before trusting the CLI's own success message.
+Important limitation, confirmed via testing: `lib/sns.js` uses the SDK's
+**top-level** V2 record functions, which have no devnet override at all
+(same gap as `getRecordV2`'s missing cluster option) — attempting to run
+them against devnet fails with "program does not exist," since they're
+hardcoded to mainnet's program ID. This means **`lib/sns.js` cannot be
+devnet-tested directly.** The devnet confirmation we do have (see
+`CHANGELOG.md`) used `devnet.bindings` equivalents instead — that proves
+the underlying Name Service Program's create-then-update *pattern*
+works, not literally this file's own code path.
+
+Practical result: the create path is proven at the protocol level; the
+update-fallback in `writeIpfsRecord` has **no verification path available
+before mainnet** — you'll be testing it for real the first time you
+redeploy to a domain that already has a record set. Use `readIpfsRecord()`
+afterward to confirm it landed correctly.
 
 ## Relative asset paths (important)
 
